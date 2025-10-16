@@ -1,0 +1,257 @@
+<script src="https://cubism.live2d.com/sdk-web/cubismcore/live2dcubismcore.min.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/dylanNew/live2d/webgl/Live2D/lib/live2d.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pixi.js@6.5.2/dist/browser/pixi.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pixi-live2d-display/dist/index.min.js"></script>
+
+<canvas id=canvas></canvas>
+
+<script>
+    let currentModel = null;
+    let coreModel = null;
+    let eyeParamId = null;
+    let breathParamId = null;
+    let mouseXId = null;
+    let mouseYId = null;
+    let blinkFunc = null;
+    let breathFunc = null;
+    let expressionMap = {};
+    let savedScale = 1;
+    let modelWidth, modelHeight;
+    let infoText;
+
+    const app = new PIXI.Application({
+        view: canvas,
+        autoStart: true,
+        resizeTo: window
+    });
+
+    async function readAllFiles(entry, path) {
+        return new Promise((resolve, reject) => {
+            if (!entry.isDirectory) {
+                reject(new Error('Not a directory'));
+                return;
+            }
+
+            const reader = entry.createReader();
+            const subPromises = [];
+            let reading = true;
+
+            function readNextBatch() {
+                reader.readEntries((entries) => {
+                    if (entries.length) {
+                        entries.forEach((subEntry) => {
+                            if (subEntry.isFile) {
+                                const filePath = path + subEntry.name;
+                                const filePromise = new Promise((fileRes, fileRej) => {
+                                    subEntry.file((file) => {
+                                        Object.defineProperty(file, 'webkitRelativePath', {
+                                            value: filePath,
+                                            configurable: true
+                                        });
+                                        fileRes([file]);
+                                    }, fileRej);
+                                });
+                                subPromises.push(filePromise);
+                            } else {
+                                const subPath = path + subEntry.name + '/';
+                                subPromises.push(readAllFiles(subEntry, subPath));
+                            }
+                        });
+                        readNextBatch();
+                    } else if (reading) {
+                        reading = false;
+                        Promise.all(subPromises).then((subFiles) => {
+                            resolve(subFiles.flat());
+                        }).catch(reject);
+                    }
+                }, reject);
+            }
+
+            readNextBatch();
+        });
+    }
+
+    async function setupModel(model, config) {
+        model.anchor.set(0.5, 0.5);
+
+        const localBounds = model.getLocalBounds();
+        modelWidth = localBounds.width;
+        modelHeight = localBounds.height;
+        fitModel();
+
+        coreModel = model.internalModel.coreModel;
+
+        const eyeName = config.ParameterSettings.find(p => p.UseBlinking)?.OutputLive2D || 'EyeOpen';
+        eyeParamId = eyeName;
+
+        mouseXId = 'MousePositionX';
+        mouseYId = 'MousePositionY';
+
+        // Blink
+        if (eyeParamId !== null) {
+            let eyeValue = 1.0;
+            let blinkPhase = 'idle';
+            let blinkStartTime = 0;
+            let nextBlinkTime = Date.now() + (3000 + Math.random() * 2000);
+
+            blinkFunc = () => {
+                const now = Date.now();
+                if (now >= nextBlinkTime && blinkPhase === 'idle') {
+                    blinkPhase = 'closing';
+                    blinkStartTime = now;
+                    nextBlinkTime = now + (3000 + Math.random() * 2000);
+                }
+
+                if (blinkPhase === 'closing') {
+                    const elapsed = (now - blinkStartTime) / 100;
+                    if (elapsed < 1) {
+                        eyeValue = 1 - elapsed;
+                    } else {
+                        eyeValue = 0;
+                        blinkPhase = 'closed';
+                        blinkStartTime = now;
+                    }
+                } else if (blinkPhase === 'closed') {
+                    const elapsed = (now - blinkStartTime) / 50;
+                    if (elapsed >= 1) {
+                        blinkPhase = 'opening';
+                        blinkStartTime = now;
+                    }
+                } else if (blinkPhase === 'opening') {
+                    const elapsed = (now - blinkStartTime) / 150;
+                    if (elapsed < 1) {
+                        eyeValue = elapsed;
+                    } else {
+                        eyeValue = 1;
+                        blinkPhase = 'idle';
+                    }
+                }
+
+                coreModel.setParameterValueById(eyeParamId, eyeValue);
+            };
+            app.ticker.add(blinkFunc);
+
+        };
+    }
+
+    function fitModel() {
+        if (!modelWidth || !modelHeight || !currentModel) return;
+        const scaleX = app.screen.width / modelWidth;
+        const scaleY = app.screen.height / modelHeight;
+        const scale = Math.min(scaleX, scaleY) * savedScale;
+        currentModel.scale.set(scale);
+        currentModel.position.set(app.screen.width / 2, app.screen.height / 2);
+    }
+
+    (async function main() {
+        infoText = new PIXI.Text('Drag and drop a VTube Studio model directory here to load a Live2D model.\n\nPress 1,2,3 for expressions once loaded.', {
+            fontFamily: 'Arial',
+            fontSize: 24,
+            fill: 0xffffff,
+            align: 'center'
+        });
+        infoText.anchor.set(0.5, 0.5);
+        infoText.x = app.screen.width / 2;
+        infoText.y = app.screen.height / 2;
+        app.stage.addChild(infoText);
+
+        window.addEventListener('resize', () => {
+            if (infoText) {
+                infoText.x = app.screen.width / 2;
+                infoText.y = app.screen.height / 2;
+            }
+            if (currentModel) fitModel();
+        });
+
+        // Mouse tracking
+        app.stage.interactive = true;
+        app.stage.hitArea = new PIXI.Rectangle(0, 0, app.screen.width, app.screen.height);
+        app.stage.on('pointermove', (event) => {
+            if (!coreModel) return;
+            const pos = event.data.global;
+            const w = app.screen.width;
+            const h = app.screen.height;
+            const valueX = (pos.x / w - 0.5) * 20;
+            const valueY = -10 + (pos.y / h) * 20;
+            if (mouseXId !== null) coreModel.setParameterValueById(mouseXId, valueX);
+            if (mouseYId !== null) coreModel.setParameterValueById(mouseYId, valueY);
+        });
+
+        // Hotkeys
+        document.addEventListener('keydown', (e) => {
+            const expName = expressionMap[e.key];
+            if (expName && currentModel) {
+                currentModel.expression(expName);
+            }
+        });
+
+        // Drag and drop
+        canvas.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'copy';
+        });
+
+        canvas.addEventListener('drop', async (e) => {
+            e.preventDefault();
+            const item = [...e.dataTransfer.items].find(i => i.kind === 'file');
+            if (!item) return;
+            const entry = item.webkitGetAsEntry();
+            if (!entry || !entry.isDirectory) return;
+
+            try {
+                const files = await readAllFiles(entry, '');
+                const filteredFiles = files.filter(f => !f.name.endsWith('items_pinned_to_model.json'));
+                const vtubeFile = filteredFiles.find(f => f.name.endsWith('.vtube.json'));
+                if (!vtubeFile) {
+                    console.error('No .vtube.json found');
+                    return;
+                }
+
+                const configText = await new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = () => resolve(reader.result);
+                    reader.onerror = reject;
+                    reader.readAsText(vtubeFile);
+                });
+                const config = JSON.parse(configText);
+
+                savedScale = config.SavedModelPosition.Scale.x;
+
+                expressionMap = {};
+                config.Hotkeys.forEach((hk, index) => {
+                    const expFile = hk.File;
+                    const expName = expFile.replace('.exp3.json', '');
+                    const key = String.fromCharCode(49 + index);
+                    expressionMap[key] = expName;
+                });
+
+                // Replace model
+                if (currentModel) {
+                    app.stage.removeChild(currentModel);
+                    currentModel.destroy(true);
+                }
+                if (blinkFunc) {
+                    app.ticker.remove(blinkFunc);
+                    blinkFunc = null;
+                }
+                if (breathFunc) {
+                    app.ticker.remove(breathFunc);
+                    breathFunc = null;
+                }
+
+                const newModel = await PIXI.live2d.Live2DModel.from(filteredFiles);
+                currentModel = newModel;
+                app.stage.addChild(newModel);
+                await setupModel(newModel, config);
+
+                if (infoText) {
+                    app.stage.removeChild(infoText);
+                    infoText.destroy();
+                    infoText = null;
+                }
+            } catch (err) {
+                console.error('Error loading dropped directory:', err);
+            }
+        });
+    })();
+</script>
