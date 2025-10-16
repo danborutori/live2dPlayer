@@ -315,10 +315,29 @@
                     mouseUpdateFunc = null;
                 }
 
+                // customSetting
+                const modelFile = filteredFiles.find( f=>f.name.endsWith(".model3.json") )
+                if( modelFile ){
+                    const settingText = await new Promise((resolve, reject) => {
+                        const reader = new FileReader();
+                        reader.onload = () => resolve(reader.result);
+                        reader.onerror = reject;
+                        reader.readAsText(modelFile);
+                    });
+                    const settingsJson = JSON.parse(settingText);
+                    settingsJson.FileReferences.Motions = {
+                        idle: [{File: config.FileReferences.IdleAnimation}]
+                    }
+                    settingsJson.url = modelFile.name
+                    filteredFiles.settings = new PIXI.live2d.Cubism4ModelSettings(settingsJson)
+                    filteredFiles.settings._objectURL = URL.createObjectURL(modelFile)
+                }
+
                 const newModel = await PIXI.live2d.Live2DModel.from(filteredFiles);
                 currentModel = newModel;
                 app.stage.addChild(newModel);
                 await setupModel(newModel, config);
+                await newModel.motion("idle",0,true)
 
                 if (infoText) {
                     app.stage.removeChild(infoText);
