@@ -317,20 +317,25 @@
 
                 // customSetting
                 const modelFile = filteredFiles.find( f=>f.name.endsWith(".model3.json") )
-                if( modelFile ){
-                    const settingText = await new Promise((resolve, reject) => {
-                        const reader = new FileReader();
-                        reader.onload = () => resolve(reader.result);
-                        reader.onerror = reject;
-                        reader.readAsText(modelFile);
-                    });
-                    const settingsJson = JSON.parse(settingText);
-                    settingsJson.FileReferences.Motions = {
-                        idle: [{File: config.FileReferences.IdleAnimation}]
+                if( modelFile && config.FileReferences.IdleAnimation ){
+
+                    const motionFile = filteredFiles.find( f=>f.name===config.FileReferences.IdleAnimation ) 
+                    if( motionFile ){
+
+                        const settingText = await new Promise((resolve, reject) => {
+                            const reader = new FileReader();
+                            reader.onload = () => resolve(reader.result);
+                            reader.onerror = reject;
+                            reader.readAsText(modelFile);
+                        });
+                        const settingsJson = JSON.parse(settingText);
+                        settingsJson.FileReferences.Motions = {
+                            idle: [{File: motionFile.webkitRelativePath}]
+                        }
+                        settingsJson.url = modelFile.name
+                        filteredFiles.settings = new PIXI.live2d.Cubism4ModelSettings(settingsJson)
+                        filteredFiles.settings._objectURL = URL.createObjectURL(modelFile)
                     }
-                    settingsJson.url = modelFile.name
-                    filteredFiles.settings = new PIXI.live2d.Cubism4ModelSettings(settingsJson)
-                    filteredFiles.settings._objectURL = URL.createObjectURL(modelFile)
                 }
 
                 const newModel = await PIXI.live2d.Live2DModel.from(filteredFiles);
