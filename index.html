@@ -338,11 +338,16 @@
                     }
                 }
 
-                const newModel = await PIXI.live2d.Live2DModel.from(filteredFiles);
+                // Set idle motion group option
+                const modelOptions = {
+                    idleMotionGroup: 'idle'
+                };
+
+                const newModel = await PIXI.live2d.Live2DModel.from(filteredFiles, modelOptions);
                 currentModel = newModel;
                 app.stage.addChild(newModel);
                 await setupModel(newModel, config);
-                await newModel.motion("idle",0,true)
+                newModel.internalModel.motionManager.groups.idle = 'idle';
 
                 if (infoText) {
                     app.stage.removeChild(infoText);
