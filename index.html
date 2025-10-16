@@ -14,10 +14,25 @@
     let mouseYId = null;
     let blinkFunc = null;
     let breathFunc = null;
+    let mouseUpdateFunc = null;
     let expressionMap = {};
     let savedScale = 1;
     let modelWidth, modelHeight;
     let infoText;
+    let inputLowerX = -0.5;
+    let inputUpperX = 0.5;
+    let outputLowerX = -10;
+    let outputUpperX = 10;
+    let inputLowerY = 0.5;
+    let inputUpperY = -0.5;
+    let outputLowerY = -10;
+    let outputUpperY = 10;
+    let targetMouseX = 0;
+    let currentMouseX = 0;
+    let targetMouseY = 0;
+    let currentMouseY = 0;
+    let smoothingX = 0;
+    let smoothingY = 0;
 
     const app = new PIXI.Application({
         view: canvas,
@@ -84,8 +99,35 @@
         const eyeName = config.ParameterSettings.find(p => p.UseBlinking)?.OutputLive2D || 'EyeOpen';
         eyeParamId = eyeName;
 
-        mouseXId = 'MousePositionX';
-        mouseYId = 'MousePositionY';
+        const mouseXSetting = config.ParameterSettings.find(p => p.Input === "MousePositionX");
+        let mouseXName = 'MousePositionX';
+        if (mouseXSetting) {
+            inputLowerX = mouseXSetting.InputRangeLower;
+            inputUpperX = mouseXSetting.InputRangeUpper;
+            outputLowerX = mouseXSetting.OutputRangeLower;
+            outputUpperX = mouseXSetting.OutputRangeUpper;
+            smoothingX = mouseXSetting.Smoothing;
+            mouseXName = mouseXSetting.OutputLive2D;
+        }
+        mouseXId = mouseXSetting?.OutputLive2D || 'MousePositionX';
+
+        const mouseYSetting = config.ParameterSettings.find(p => p.Input === "MousePositionY");
+        let mouseYName = 'MousePositionY';
+        if (mouseYSetting) {
+            inputLowerY = mouseYSetting.InputRangeLower;
+            inputUpperY = mouseYSetting.InputRangeUpper;
+            outputLowerY = mouseYSetting.OutputRangeLower;
+            outputUpperY = mouseYSetting.OutputRangeUpper;
+            smoothingY = mouseXSetting.Smoothing;
+            mouseYName = mouseYSetting.OutputLive2D;
+        }
+        mouseYId = mouseYSetting?.OutputLive2D || 'MousePositionY';
+
+        // Initialize mouse values
+        currentMouseX = 0;
+        currentMouseY = 0;
+        targetMouseX = 0;
+        targetMouseY = 0;
 
         // Blink
         if (eyeParamId !== null) {
@@ -131,6 +173,20 @@
             };
             app.ticker.add(blinkFunc);
 
+            // Mouse tracking
+            const lerpFactor = 0.2; // Adjust for desired smoothness (0.1 for more, 0.3 for less)
+            mouseUpdateFunc = () => {
+                const lerpX = smoothingX > 0 ? (1 - (smoothingX / 100) * 0.8) : 1;
+                const lerpY = smoothingY > 0 ? (1 - (smoothingY / 100) * 0.8) : 1;
+
+                currentMouseX += (targetMouseX - currentMouseX) * lerpX;
+                coreModel.setParameterValueById(mouseXId, currentMouseX);
+                
+                currentMouseY += (targetMouseY - currentMouseY) * lerpY;
+                coreModel.setParameterValueById(mouseYId, currentMouseY);
+            };
+            app.ticker.add(mouseUpdateFunc);
+
         };
     }
 
@@ -163,7 +219,7 @@
             if (currentModel) fitModel();
         });
 
-        // Mouse tracking
+        // Mouse tracking - set targets
         app.stage.interactive = true;
         app.stage.hitArea = new PIXI.Rectangle(0, 0, app.screen.width, app.screen.height);
         app.stage.on('pointermove', (event) => {
@@ -171,10 +227,26 @@
             const pos = event.data.global;
             const w = app.screen.width;
             const h = app.screen.height;
-            const valueX = (pos.x / w - 0.5) * 20;
-            const valueY = -10 + (pos.y / h) * 20;
-            if (mouseXId !== null) coreModel.setParameterValueById(mouseXId, valueX);
-            if (mouseYId !== null) coreModel.setParameterValueById(mouseYId, valueY);
+
+             // X mapping
+            const rawInputX = pos.x / w - 0.5;
+            const deltaInX = inputUpperX - inputLowerX;
+            if (deltaInX !== 0 && mouseXId !== null) {
+                const fractionX = (rawInputX - inputLowerX) / deltaInX;
+                targetMouseX = outputLowerX + fractionX * (outputUpperX - outputLowerX);
+            } else {
+                targetMouseX = 0;
+            }
+
+            // Y mapping
+            const rawInputY = 0.5 - (pos.y / h);
+            const deltaInY = inputUpperY - inputLowerY;
+            if (deltaInY !== 0 && mouseYId !== null) {
+                const fractionY = (rawInputY - inputLowerY) / deltaInY;
+                targetMouseY = outputLowerY + fractionY * (outputUpperY - outputLowerY);
+            } else {
+                targetMouseY = 0;
+            }
         });
 
         // Hotkeys
@@ -237,6 +309,10 @@
                 if (breathFunc) {
                     app.ticker.remove(breathFunc);
                     breathFunc = null;
+                }
+                if (mouseUpdateFunc) {
+                    app.ticker.remove(mouseUpdateFunc);
+                    mouseUpdateFunc = null;
                 }
 
                 const newModel = await PIXI.live2d.Live2DModel.from(filteredFiles);
