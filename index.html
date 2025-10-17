@@ -7,6 +7,7 @@
 TODO: scale/rotate
 TODO: audio
 TODO: load from zip
+TODO: fix hardcode
 -->
 
 <canvas id=canvas></canvas>
@@ -39,6 +40,27 @@ TODO: load from zip
     let currentMouseY = 0;
     let smoothingX = 0;
     let smoothingY = 0;
+
+    // Gesture state
+    let isDragging = false;
+    let dragStart = { x: 0, y: 0 };
+    let modelStartPos = { x: 0, y: 0 };
+    let isPinching = false;
+    let pinchStartDist = 0;
+    let pinchStartScale = 1;
+    let isRotating = false;
+    let pinchStartAngle = 0;
+    let pinchStartRotation = 0;
+    let touches = [];
+    
+    // Smooth scale state
+    let targetScale = 1;
+    let currentScale = 1;
+    let scaleSmoothing = 0.1; // Lerp factor for smooth scaling (0.05-0.2; lower = smoother/slower)
+
+    let isRotatingMouse = false;
+    let modelStartRotation = 0;
+    let dragStartAngle = 0;
 
     const app = new PIXI.Application({
         view: canvas,
@@ -267,6 +289,10 @@ TODO: load from zip
             currentMouseY += (targetMouseY - currentMouseY) * lerpY;
             coreModel.setParameterValueById(mouseYId, currentMouseY);
 
+            // Smooth scale lerp
+            currentScale += (targetScale - currentScale) * scaleSmoothing;
+            model.scale.set(currentScale, currentScale);
+
             animator.update()
         };
         app.ticker.add(mouseUpdateFunc);
@@ -297,7 +323,7 @@ TODO: load from zip
         const scaleX = app.screen.width / modelWidth;
         const scaleY = app.screen.height / modelHeight;
         const scale = Math.min(scaleX, scaleY) * savedScale;
-        currentModel.scale.set(scale);
+        targetScale = scale
         currentModel.position.set(app.screen.width / 2, app.screen.height / 2);
     }
 
@@ -417,6 +443,14 @@ TODO: load from zip
                     mouseUpdateFunc = null;
                 }
 
+                // Reset gesture states
+                isDragging = false;
+                isPinching = false;
+                isRotating = false;
+                touches = [];
+                targetScale = 1;
+                currentScale = 1;
+
                 // customSetting
                 const modelFile = filteredFiles.find( f=>f.name.endsWith(".model3.json") )
                 if( modelFile ){
@@ -462,6 +496,117 @@ TODO: load from zip
                 }
             } catch (err) {
                 console.error('Error loading dropped directory:', err);
+            }
+        });
+
+        // Gesture handling for move, scale, rotate
+        let lastScale = 1;
+        let lastRotation = 0;
+
+        // Mouse events for drag (pan) and wheel (scale)
+        canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+        canvas.addEventListener('mousedown', (e) => {
+            if(!currentModel)return
+            if (e.button === 0) { // Left: pan
+                isDragging = true;
+                dragStart = { x: e.clientX, y: e.clientY };
+                modelStartPos = { x: currentModel.x, y: currentModel.y };
+            } else if (e.button === 2) { // Right: rotate
+                isRotatingMouse = true;
+                dragStart = { x: e.clientX, y: e.clientY };
+                modelStartRotation = currentModel.rotation;
+                dragStartAngle = Math.atan2(e.clientY - app.screen.height / 2, e.clientX - app.screen.width / 2);
+            }
+            e.preventDefault();
+        });
+
+        canvas.addEventListener('mousemove', (e) => {
+            if(!currentModel)return
+            if (isDragging) {
+                const dx = e.clientX - dragStart.x;
+                const dy = e.clientY - dragStart.y;
+                currentModel.x = modelStartPos.x + dx;
+                currentModel.y = modelStartPos.y + dy;
+            } else if (isRotatingMouse) {
+                const currentAngle = Math.atan2(e.clientY - app.screen.height / 2, e.clientX - app.screen.width / 2);
+                const deltaAngle = currentAngle - dragStartAngle;
+                currentModel.rotation = modelStartRotation + deltaAngle;
+            }
+        });
+
+        canvas.addEventListener('mouseup', (e) => {
+            if (e.button === 0) {
+                isDragging = false;
+            } else if (e.button === 2) {
+                isRotatingMouse = false;
+            }
+        });
+
+        canvas.addEventListener('wheel', (e) => {
+            if(!currentModel)return
+            e.preventDefault();
+            const scaleDelta = e.deltaY > 0 ? 0.9 : 1.1;
+            targetScale *= scaleDelta;
+        });
+
+        // Touch events for pan, pinch scale, rotate
+        canvas.addEventListener('touchstart', (e) => {
+            if(!currentModel)return
+            e.preventDefault();
+            touches = Array.from(e.changedTouches);
+            if (touches.length === 1) {
+                // Single touch: pan
+                const touch = touches[0];
+                dragStart = { x: touch.clientX, y: touch.clientY };
+                modelStartPos = { x: currentModel.x, y: currentModel.y };
+                isDragging = true;
+            } else if (touches.length === 2) {
+                // Two touches: pinch/rotate
+                isPinching = true;
+                const t1 = touches[0], t2 = touches[1];
+                pinchStartDist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+                pinchStartScale = currentModel.scale.x;
+                pinchStartAngle = Math.atan2(t2.clientY - t1.clientY, t2.clientX - t1.clientX);
+                pinchStartRotation = currentModel.rotation;
+            }
+        });
+
+        canvas.addEventListener('touchmove', (e) => {
+            if(!currentModel)return
+            e.preventDefault();
+            const changedTouches = Array.from(e.changedTouches);
+            touches = changedTouches;
+
+            if (touches.length === 1 && isDragging) {
+                // Pan
+                const touch = touches[0];
+                const dx = touch.clientX - dragStart.x;
+                const dy = touch.clientY - dragStart.y;
+                currentModel.x = modelStartPos.x + dx;
+                currentModel.y = modelStartPos.y + dy;
+            } else if (touches.length === 2 && isPinching) {
+                // Pinch scale and rotate
+                const t1 = touches[0], t2 = touches[1];
+                const dist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+                const scale = dist / pinchStartDist * pinchStartScale;
+                targetScale = scale; // Set target for smooth lerp
+                targetScale = Math.max(0.5, Math.min(3.0, targetScale)); // Clamp
+
+                const angle = Math.atan2(t2.clientY - t1.clientY, t2.clientX - t1.clientX);
+                const rotation = pinchStartRotation + (angle - pinchStartAngle);
+                currentModel.rotation = rotation;
+            }
+        });
+
+        canvas.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            const changedTouches = Array.from(e.changedTouches);
+            touches = touches.filter(t => !changedTouches.some(ct => ct.identifier === t.identifier));
+
+            if (touches.length === 0) {
+                isDragging = false;
+                isPinching = false;
+                isRotating = false;
             }
         });
     })();
