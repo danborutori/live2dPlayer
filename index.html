@@ -30,9 +30,28 @@
 <script src="https://cdn.jsdelivr.net/npm/pixi.js@6.5.2/dist/browser/pixi.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/pixi-live2d-display/dist/index.min.js"></script>
 
-<input type="file" id="fileInput" accept=".zip">
+<input type="file" id="fileInput" style="visibility: hidden;">
 
 <canvas id=canvas></canvas>
+<div id="infoText" style="
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: white;
+    font-family: Arial, sans-serif;
+    font-size: 24px;
+    text-align: center;
+    max-width: 80vw;
+    line-height: 1.4;
+    word-break: break-word; /* For Japanese wrapping */
+    z-index: 10;
+    pointer-events: auto; /* Allow clicks through to canvas */
+">
+VTube StudioモデルディレクトリまたはZIPファイルをドラッグ&ドロップしてLive2Dモデルをロード。<br><br>
+またはタップしてZIPを選択。<br><br>
+ロード後、1,2,3キーで表情を切り替えられます。
+</div>
 
 <script>
     let currentModel = null;
@@ -418,27 +437,14 @@
     }
 
     (async function main() {
-        infoText = new PIXI.Text('Drag and drop a VTube Studio model directory here to load a Live2D model.\n\nPress 1,2,3 for expressions once loaded.', {
-            fontFamily: 'Arial',
-            fontSize: 24,
-            fill: 0xffffff,
-            align: 'center'
-        });
-        infoText.anchor.set(0.5, 0.5);
-        infoText.x = app.screen.width / 2;
-        infoText.y = app.screen.height / 2;
-        infoText.interactive = true;
-        infoText.buttonMode = true; // Cursor pointer on hover
-        infoText.on('pointertap', () => {
-            fileInput.click(); // Trigger file selection
-        });
-        app.stage.addChild(infoText);
-
+        const infoText = document.getElementById('infoText');
+        infoText.onclick = ()=>fileInput.click()
+        function resizeText(){        
+            infoText.style.fontSize = `${Math.min(24, app.screen.width / 20)}px`; // Responsive size
+        }
+        resizeText()
         window.addEventListener('resize', () => {
-            if (infoText) {
-                infoText.x = app.screen.width / 2;
-                infoText.y = app.screen.height / 2;
-            }
+            resizeText()
         });
 
         // Mouse tracking - set targets
@@ -628,11 +634,7 @@
                     app.stage.addChild(newModel);
                     await setupModel(newModel, config, settingJSON);
             
-                    if (infoText) {
-                        app.stage.removeChild(infoText);
-                        infoText.destroy();
-                        infoText = null;
-                    }
+                    infoText.style.display = 'none'; // Hide after load
                 }
             } catch (err) {
                 console.error('Error loading dropped directory:', err);
