@@ -795,7 +795,6 @@ VTube StudioモデルディレクトリまたはZIPファイルをドラッグ&�
             } else if (touches.length === 2) {
                 // Two touches: pinch/rotate
                 isPinching = true;
-                isDragging = false;
                 const t1 = touches[0], t2 = touches[1];
                 pinchStartDist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
                 pinchStartScale = currentModel.scale.x;
@@ -810,7 +809,7 @@ VTube StudioモデルディレクトリまたはZIPファイルをドラッグ&�
             const changedTouches = Array.from(e.changedTouches);
             touches = changedTouches;
 
-            if (touches.length === 1 && isDragging) {
+            if (e.touches.length === 1 && isDragging) {
                 // Pan
                 const touch = touches[0];
                 const dx = touch.clientX - dragStart.x;
