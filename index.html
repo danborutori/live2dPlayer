@@ -87,6 +87,8 @@ TODO: fix hardcode
     let modelStartRotation = 0;
     let dragStartAngle = 0;
 
+    let currentAudioPlayer = null;
+
     const app = new PIXI.Application({
         view: canvas,
         autoStart: true,
@@ -141,11 +143,11 @@ TODO: fix hardcode
 
     function thrustingSmooth(time, min = 0, max = 1 ) {
         // Smooth sin thrust base
-        let thrust = Math.sin(time * 2 * Math.PI)*0.7;
+        let thrust = Math.sin(time * 2 * Math.PI)*0.9;
         
         // Add layered harmonics for smoothness/depth
-        thrust += Math.sin(time * 2 * 1.22 * Math.PI+0.012) * 0.2; // 2nd harmonic
-        thrust += Math.sin(time * 2 * 0.545 * Math.PI+0.456) * 0.1; // 3rd harmonic
+        thrust += Math.sin(time * 2 * 1.22 * Math.PI+0.012) * 0.05; // 2nd harmonic
+        thrust += Math.sin(time * 2 * 0.545 * Math.PI+0.456) * 0.05; // 3rd harmonic
         
         // Clamp and remap to [min, max]
         thrust = Math.max(-1, Math.min(1, thrust));
@@ -209,6 +211,98 @@ TODO: fix hardcode
                 p.depth = targetDepth*p.thrustingFade+(-10)*(1-p.thrustingFade)
 
                 this.coreModel.setParameterValueById(p.paramId, p.depth)
+            }
+        }
+    }
+
+    let audioContext = null
+    const audioBufferCache = new WeakMap()
+    async function playSoundFile(file) {
+        if (!file || !file.type.startsWith('audio/')) {
+            console.warn('Invalid audio file');
+            return;
+        }
+
+        // Initialize/resume AudioContext
+        if (!audioContext) {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        if (audioContext.state === 'suspended') {
+            await audioContext.resume();
+        }
+
+        try {
+            let audioBuffer = audioBufferCache.get(file)
+
+            if(!audioBuffer){
+                // Read file as ArrayBuffer
+                const arrayBuffer = await file.arrayBuffer();
+                
+                // Decode to AudioBuffer
+                audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+                audioBufferCache.set(file, audioBuffer )
+            }
+            
+            // Create and play source
+            const source = audioContext.createBufferSource();
+            source.buffer = audioBuffer;
+            source.connect(audioContext.destination);
+            source.start(0);
+        } catch (error) {
+            console.error('Failed to play sound:', error);
+        }
+    }
+
+    class AudioPlayer {
+
+        contents = []
+
+        constructor( source ){
+            this.source = source
+
+            const settingFile = source.find( s=>s.name.endsWith("Setting.txt"))
+            if( settingFile ){
+                const reader = new FileReader()
+                reader.onload = ()=>{
+                    const json = JSON.parse( reader.result )
+                    this.contents = json.contents
+                }
+                reader.readAsText( settingFile )
+            }
+        }
+
+        update(){
+            if( currentModel ){                
+                const coreModel = currentModel.internalModel.coreModel
+
+                const falseBreath = Math.sin(Date.now()/1000*Math.PI*2)*0.5+0.5
+
+                for( let c of this.contents ){
+                    const triggered = c.triggers.reduce((v,t)=>{
+                        const paramId = t.paramName.replace("LIVE2D:","")
+                        const pv = paramId==="ParamBreath"?falseBreath:coreModel.getParameterValueById(paramId)
+                        return v && pv>=t.min && pv<t.max
+                    }, true)
+
+                    if( triggered ){
+                        if( !c.triggered ){
+                            c.triggered = true
+                            console.log(`trigger: ${c.contentName}`)
+
+                            const soundFile = this.source.find( f=>f.name===c.seFileName)
+                            if( soundFile ){
+                                playSoundFile( soundFile )
+                            }
+                        }
+                    }else{
+                        if( c.triggered ){                            
+                            c.triggered = false
+                            console.log(`untrigger: ${c.contentName}`)
+                        }else{
+                            console.log(`not trigger: ${c.contentName} ${coreModel.getParameterValueById(c.triggers[0].paramName.replace("LIVE2D:",""))}`)
+                        }
+                    }
+                }
             }
         }
     }
@@ -400,6 +494,9 @@ TODO: fix hardcode
                 targetMouseY = 0;
             }
         });
+        app.ticker.add(()=>{
+            currentAudioPlayer?.update()
+        })
 
         // Hotkeys
         document.addEventListener('keydown', (e) => {
@@ -428,6 +525,9 @@ TODO: fix hardcode
                 const vtubeFile = filteredFiles.find(f => f.name.endsWith('.vtube.json'));
                 if (!vtubeFile) {
                     console.error('No .vtube.json found');
+
+                    currentAudioPlayer = new AudioPlayer(files)
+
                     return;
                 }
 
