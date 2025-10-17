@@ -121,6 +121,7 @@ VTube StudioモデルディレクトリまたはZIPファイルをドラッグ&�
 
     let currentAudioPlayer = null;
 
+    PIXI.settings.RESOLUTION = window.devicePixelRatio || 1;
     const app = new PIXI.Application({
         view: canvas,
         autoStart: true,
