@@ -509,20 +509,28 @@ TODO: fix hardcode
 
         canvas.addEventListener('drop', async (e) => {
             e.preventDefault();
-            const item = [...e.dataTransfer.items].find(i => i.kind === 'file');
-            if (!item) return;
-            const entry = item.webkitGetAsEntry();
-            if (!entry || !entry.isDirectory) return;
+            const items = [...e.dataTransfer.items].filter(i => i.kind === 'file' && i.webkitGetAsEntry().isDirectory);
+            if (!items.length) return;
 
             try {
-                const files = await readAllFiles(entry, '');
-                const filteredFiles = files.filter(f => !f.name.endsWith('items_pinned_to_model.json'));
-                const vtubeFile = filteredFiles.find(f => f.name.endsWith('.vtube.json'));
-                if (!vtubeFile) {
-                    console.error('No .vtube.json found');
+                let files = []; // Merged array for all directories
+                const entries = items.map(i=>i.webkitGetAsEntry())
+                for (const entry of entries) {
+                    const dirFiles = await readAllFiles(entry, '');
+                    files = files.concat(dirFiles);
+                }
 
+                // Load audio
+                if( files.find(f=>f.name.endsWith("Setting.txt")))
                     currentAudioPlayer = new AudioPlayer(files)
 
+
+                // Load model
+                const filteredFiles = files.filter(f => !f.name.endsWith('items_pinned_to_model.json'));
+                const vtubeFile = filteredFiles.find(f => f.name.endsWith('.vtube.json'));
+
+                if (!vtubeFile) {
+                    console.error('No .vtube.json found');
                     return;
                 }
 
