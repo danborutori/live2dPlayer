@@ -24,13 +24,12 @@
 </head>
 <body>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cubism.live2d.com/sdk-web/cubismcore/live2dcubismcore.min.js"></script>
 <script src="https://cdn.jsdelivr.net/gh/dylanNew/live2d/webgl/Live2D/lib/live2d.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/pixi.js@6.5.2/dist/browser/pixi.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/pixi-live2d-display/dist/index.min.js"></script>
-
 <!--
-TODO: load from zip
 TODO: fix hardcode
 -->
 
@@ -217,7 +216,7 @@ TODO: fix hardcode
     let audioContext = null
     const audioBufferCache = new WeakMap()
     async function playSoundFile(file) {
-        if (!file || !file.type.startsWith('audio/')) {
+        if (!file) {
             console.warn('Invalid audio file');
             return;
         }
@@ -273,27 +272,29 @@ TODO: fix hardcode
         update(){
             if( currentModel ){                
                 const coreModel = currentModel.internalModel.coreModel
+                if( coreModel ){
 
-                const falseBreath = Math.sin(Date.now()/1000*Math.PI*2)*0.5+0.5
+                    const falseBreath = Math.sin(Date.now()/1000*Math.PI*2)*0.5+0.5
 
-                for( let c of this.contents ){
-                    const triggered = c.triggers.reduce((v,t)=>{
-                        const paramId = t.paramName.replace("LIVE2D:","")
-                        const pv = paramId==="ParamBreath"?falseBreath:coreModel.getParameterValueById(paramId)
-                        return v && pv>=t.min && pv<t.max
-                    }, true)
+                    for( let c of this.contents ){
+                        const triggered = c.triggers.reduce((v,t)=>{
+                            const paramId = t.paramName.replace("LIVE2D:","")
+                            const pv = paramId==="ParamBreath"?falseBreath:coreModel.getParameterValueById(paramId)
+                            return v && pv>=t.min && pv<t.max
+                        }, true)
 
-                    if( triggered ){
-                        if( !c.triggered ){
-                            c.triggered = true
+                        if( triggered ){
+                            if( !c.triggered ){
+                                c.triggered = true
 
-                            const soundFile = this.source.find( f=>f.name===c.seFileName)
-                            if( soundFile ){
-                                playSoundFile( soundFile )
+                                const soundFile = this.source.find( f=>f.name.endsWith(c.seFileName))
+                                if( soundFile ){
+                                    playSoundFile( soundFile )
+                                }
                             }
+                        }else{
+                            c.triggered = false
                         }
-                    }else{
-                        c.triggered = false
                     }
                 }
             }
@@ -507,117 +508,142 @@ TODO: fix hardcode
 
         canvas.addEventListener('drop', async (e) => {
             e.preventDefault();
-            const items = [...e.dataTransfer.items].filter(i => i.kind === 'file' && i.webkitGetAsEntry().isDirectory);
-            if (!items.length) return;
+            const items = [...e.dataTransfer.items];
+            let files = []; // Merged array for all directories/ZIPs
 
-            try {
-                let files = []; // Merged array for all directories
-                const entries = items.map(i=>i.webkitGetAsEntry())
-                for (const entry of entries) {
+            const entries = items.flatMap(i=>{
+                
+                return i.kind === 'file' ? {
+                    entry: i.webkitGetAsEntry(),
+                    file: i.getAsFile()
+                }:null
+            })
+
+            for (const {entry, file} of entries) {
+                if (entry && entry.isDirectory) {
+                    // Existing dir handling
                     const dirFiles = await readAllFiles(entry, '');
                     files = files.concat(dirFiles);
+                } else {
+                    // Check if ZIP file
+                    if (file && file.name.toLowerCase().endsWith('.zip')) {
+                        const arrayBuffer = await file.arrayBuffer();
+                        const zip = await JSZip.loadAsync(arrayBuffer);
+                        const zipFiles = [];
+                        await Promise.all(Object.keys(zip.files).map(async (relativePath) => {
+                            const blob = await zip.file(relativePath)?.async('blob');
+                            if(blob){
+                                const zipFile = new File([blob], relativePath, { type: blob.type });
+                                Object.defineProperty(zipFile, 'webkitRelativePath', { value: relativePath, configurable: true });
+                                zipFiles.push(zipFile);
+                            }
+                        }));
+                        files = files.concat(zipFiles);
+                    }
                 }
+            }
 
+            if (!files.length) return;
+
+            try {                
                 // Load audio
-                if( files.find(f=>f.name.endsWith("Setting.txt")))
+                if( files.find(f=>f.name.endsWith("Setting.txt"))){
                     currentAudioPlayer = new AudioPlayer(files)
-
+                }
 
                 // Load model
                 const filteredFiles = files.filter(f => !f.name.endsWith('items_pinned_to_model.json'));
                 const vtubeFile = filteredFiles.find(f => f.name.endsWith('.vtube.json'));
 
-                if (!vtubeFile) {
-                    console.error('No .vtube.json found');
-                    return;
-                }
+                if (vtubeFile) {
 
-                const configText = await new Promise((resolve, reject) => {
-                    const reader = new FileReader();
-                    reader.onload = () => resolve(reader.result);
-                    reader.onerror = reject;
-                    reader.readAsText(vtubeFile);
-                });
-                const config = JSON.parse(configText);
-
-                savedScale = config.SavedModelPosition.Scale.x;
-
-                expressionMap = {};
-                config.Hotkeys.forEach((hk, index) => {
-                    const expFile = hk.File;
-                    const expName = expFile.replace('.exp3.json', '');
-                    const key = String.fromCharCode(49 + index);
-                    expressionMap[key] = expName;
-                });
-
-                // Replace model
-                if (currentModel) {
-                    app.stage.removeChild(currentModel);
-                    currentModel.destroy(true);
-                }
-                if (blinkFunc) {
-                    app.ticker.remove(blinkFunc);
-                    blinkFunc = null;
-                }
-                if (breathFunc) {
-                    app.ticker.remove(breathFunc);
-                    breathFunc = null;
-                }
-                if (mouseUpdateFunc) {
-                    app.ticker.remove(mouseUpdateFunc);
-                    mouseUpdateFunc = null;
-                }
-
-                // Reset gesture states
-                isDragging = false;
-                isPinching = false;
-                isRotating = false;
-                touches = [];
-                targetScale = 1;
-                currentScale = 1;
-
-                // customSetting
-                const modelFile = filteredFiles.find( f=>f.name.endsWith(".model3.json") )
-                if( modelFile ){
-                    const settingText = await new Promise((resolve, reject) => {
+                    const configText = await new Promise((resolve, reject) => {
                         const reader = new FileReader();
                         reader.onload = () => resolve(reader.result);
                         reader.onerror = reject;
-                        reader.readAsText(modelFile);
+                        reader.readAsText(vtubeFile);
                     });
-                    const settingsJson = JSON.parse(settingText);
+                    const config = JSON.parse(configText);
 
-                    // add hit areas
-                    settingsJson.HitAreas = [   // FIXME: temporay hardcode
-                        {
-                            Id: "mouth",
-                            Name: "mouth"
-                        },
-                        {
-                            Id: "vagina_open",
-                            Name: "vagina_open"
-                        },
-                        {
-                            Id: "anal_open",
-                            Name: "anal_open"
-                        },                            
-                    ]
+                    savedScale = config.SavedModelPosition.Scale.x;
 
-                    settingsJson.url = modelFile.name
-                    filteredFiles.settings = new PIXI.live2d.Cubism4ModelSettings(settingsJson)
-                    filteredFiles.settings._objectURL = URL.createObjectURL(modelFile)
-                }
+                    expressionMap = {};
+                    config.Hotkeys.forEach((hk, index) => {
+                        const expFile = hk.File;
+                        const expName = expFile.replace('.exp3.json', '');
+                        const key = String.fromCharCode(49 + index);
+                        expressionMap[key] = expName;
+                    });
 
-                // Set idle motion group option                
-                const newModel = await PIXI.live2d.Live2DModel.from(filteredFiles);
-                currentModel = newModel;
-                app.stage.addChild(newModel);
-                await setupModel(newModel, config);
-         
-                if (infoText) {
-                    app.stage.removeChild(infoText);
-                    infoText.destroy();
-                    infoText = null;
+                    // Replace model
+                    if (currentModel) {
+                        app.stage.removeChild(currentModel);
+                        currentModel.destroy(true);
+                    }
+                    if (blinkFunc) {
+                        app.ticker.remove(blinkFunc);
+                        blinkFunc = null;
+                    }
+                    if (breathFunc) {
+                        app.ticker.remove(breathFunc);
+                        breathFunc = null;
+                    }
+                    if (mouseUpdateFunc) {
+                        app.ticker.remove(mouseUpdateFunc);
+                        mouseUpdateFunc = null;
+                    }
+
+                    // Reset gesture states
+                    isDragging = false;
+                    isPinching = false;
+                    isRotating = false;
+                    touches = [];
+                    targetScale = 1;
+                    currentScale = 1;
+
+                    // customSetting
+                    const modelFile = filteredFiles.find( f=>f.name.endsWith(".model3.json") )
+                    if( modelFile ){
+                        const settingText = await new Promise((resolve, reject) => {
+                            const reader = new FileReader();
+                            reader.onload = () => resolve(reader.result);
+                            reader.onerror = reject;
+                            reader.readAsText(modelFile);
+                        });
+                        const settingsJson = JSON.parse(settingText);
+
+                        // add hit areas
+                        settingsJson.HitAreas = [   // FIXME: temporay hardcode
+                            {
+                                Id: "mouth",
+                                Name: "mouth"
+                            },
+                            {
+                                Id: "vagina_open",
+                                Name: "vagina_open"
+                            },
+                            {
+                                Id: "anal_open",
+                                Name: "anal_open"
+                            },                            
+                        ]
+
+                        settingsJson.url = modelFile.name
+                        filteredFiles.settings = new PIXI.live2d.Cubism4ModelSettings(settingsJson)
+                        filteredFiles.settings._objectURL = URL.createObjectURL(modelFile)
+                    }
+
+                    // Set idle motion group option                
+                    const newModel = await PIXI.live2d.Live2DModel.from(filteredFiles);
+                    currentModel = newModel;
+                    app.stage.addChild(newModel);
+                    await setupModel(newModel, config);
+            
+                    if (infoText) {
+                        app.stage.removeChild(infoText);
+                        infoText.destroy();
+                        infoText = null;
+                    }
                 }
             } catch (err) {
                 console.error('Error loading dropped directory:', err);
