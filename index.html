@@ -155,39 +155,21 @@ TODO: fix hardcode
     class Animator {
         prevTime = Date.now()
 
-        penetrateRange = {
-            min: 2.5,
-            max: 10
-        }
-        params = {  // FIXME: hardcoded param setting
-            mouth: {
-                paramId: "Param",
-                thrusting: true,
-                thrustingFade: 0,
-                depth: -10,
-                                
-                time: Math.random()
-            },
-            front: {
-                paramId: "Param2",
-                thrusting: true,
-                thrustingFade: 0,
-                depth: -10,
-                
-                time: Math.random()
-            },
-            back: {
-                paramId: "Param3",
-                thrusting: true,
-                thrustingFade: 0,
-                depth: -10,
+        params = {}
 
-                time: Math.random()
-            }
-        }
-
-        constructor( coreModel ){
+        constructor( coreModel, settingJSON ){
             this.coreModel = coreModel
+            this.penetrateRange = settingJSON.penetrateRange
+            for( let a of settingJSON.hitAreas ){
+                this.params[a.ExpName] = {
+                    paramId: a.paramId,
+                    thrusting: true,
+                    thrustingFade: 0,
+                    depth: -10,
+                                    
+                    time: Math.random()
+                }
+            }
         }
 
         update(){
@@ -301,7 +283,7 @@ TODO: fix hardcode
         }
     }
 
-    async function setupModel(model, config) {
+    async function setupModel(model, config, settingJSON) {
 
         model.anchor.set(0.5, 0.5);
         model.interactive = true;
@@ -390,7 +372,7 @@ TODO: fix hardcode
         app.ticker.add(blinkFunc);
 
         // Mouse tracking
-        const animator = new Animator(coreModel)
+        const animator = new Animator(coreModel, settingJSON)
         const lerpFactor = 0.2; // Adjust for desired smoothness (0.1 for more, 0.3 for less)
         mouseUpdateFunc = () => {
             const lerpX = smoothingX > 0 ? (1 - (smoothingX / 100) * 0.8) : 1;
@@ -411,20 +393,16 @@ TODO: fix hardcode
         app.ticker.add(mouseUpdateFunc);
 
         // Tap to toggle expression based on hit area
+        const hitToExpMap = {};
+        for( let a of settingJSON.hitAreas ){
+            hitToExpMap[a.Id] = a.ExpName
+        }
         model.on('hit', (hitAreas) => {
             if (hitAreas.length > 0) {
                 const hitAreaName = hitAreas[0]; // Use the first hit area
-                console.log('Tapped hit area:', hitAreaName);
 
                 // Example: Map hit area to specific expression (extend as needed)
-                let expName = null;
-                const hitToExpMap = {
-                    'mouth': 'mouth', // Assume expressions named after parts
-                    'vagina_open': 'front',
-                    'anal_open': "back"
-                    // Add more mappings based on model hit areas
-                };
-                expName = hitToExpMap[hitAreaName];
+                let expName = hitToExpMap[hitAreaName];
 
                 animator.params[expName].thrusting = !animator.params[expName].thrusting
             }
@@ -526,26 +504,51 @@ TODO: fix hardcode
                     files = files.concat(dirFiles);
                 } else {
                     // Check if ZIP file
-                    if (file && file.name.toLowerCase().endsWith('.zip')) {
-                        const arrayBuffer = await file.arrayBuffer();
-                        const zip = await JSZip.loadAsync(arrayBuffer);
-                        const zipFiles = [];
-                        await Promise.all(Object.keys(zip.files).map(async (relativePath) => {
-                            const blob = await zip.file(relativePath)?.async('blob');
-                            if(blob){
-                                const zipFile = new File([blob], relativePath, { type: blob.type });
-                                Object.defineProperty(zipFile, 'webkitRelativePath', { value: relativePath, configurable: true });
-                                zipFiles.push(zipFile);
-                            }
-                        }));
-                        files = files.concat(zipFiles);
+                    if (file ){
+                        if( file.name.toLowerCase().endsWith('.zip')) {
+                            const arrayBuffer = await file.arrayBuffer();
+                            const zip = await JSZip.loadAsync(arrayBuffer);
+                            const zipFiles = [];
+                            await Promise.all(Object.keys(zip.files).map(async (relativePath) => {
+                                const blob = await zip.file(relativePath)?.async('blob');
+                                if(blob){
+                                    const zipFile = new File([blob], relativePath, { type: blob.type });
+                                    Object.defineProperty(zipFile, 'webkitRelativePath', { value: relativePath, configurable: true });
+                                    zipFiles.push(zipFile);
+                                }
+                            }));
+                            files = files.concat(zipFiles);
+                        }else{
+                            files = files.concat(file);
+                        }
                     }
                 }
             }
 
             if (!files.length) return;
 
-            try {                
+            try {
+                //load setting
+                const settingFile = files.find(f=>f.name.endsWith("player.config.json"))
+                let settingJSON = { // default setting
+                    "hitAreas": [],
+                    "penetrateRange": {
+                        "min": 2.5,
+                        "max": 10
+                    }
+                }
+                if( settingFile ){
+                    await new Promise( (resolve,reject)=>{
+                        const reader = new FileReader()
+                        reader.onload = ()=>{
+                            settingJSON = JSON.parse(reader.result)
+                            resolve()
+                        }
+                        reader.onerror = e=>reject(e)
+                        reader.readAsText(settingFile)
+                    })
+                }
+
                 // Load audio
                 if( files.find(f=>f.name.endsWith("Setting.txt"))){
                     currentAudioPlayer = new AudioPlayer(files)
@@ -612,21 +615,13 @@ TODO: fix hardcode
                         });
                         const settingsJson = JSON.parse(settingText);
 
-                        // add hit areas
-                        settingsJson.HitAreas = [   // FIXME: temporay hardcode
-                            {
-                                Id: "mouth",
-                                Name: "mouth"
-                            },
-                            {
-                                Id: "vagina_open",
-                                Name: "vagina_open"
-                            },
-                            {
-                                Id: "anal_open",
-                                Name: "anal_open"
-                            },                            
-                        ]
+                        // add hit areas                        
+                        settingsJson.HitAreas = settingJSON.hitAreas.map(a=>{
+                            return {
+                                Id: a.Id,
+                                Name: a.Name
+                            }
+                        })
 
                         settingsJson.url = modelFile.name
                         filteredFiles.settings = new PIXI.live2d.Cubism4ModelSettings(settingsJson)
@@ -637,7 +632,7 @@ TODO: fix hardcode
                     const newModel = await PIXI.live2d.Live2DModel.from(filteredFiles);
                     currentModel = newModel;
                     app.stage.addChild(newModel);
-                    await setupModel(newModel, config);
+                    await setupModel(newModel, config, settingJSON);
             
                     if (infoText) {
                         app.stage.removeChild(infoText);
