@@ -766,23 +766,25 @@ VTube StudioモデルディレクトリまたはZIPファイルをドラッグ&�
         canvas.addEventListener('touchstart', (e) => {
             if(!currentModel)return
             e.preventDefault();
-            touches = Array.from(e.changedTouches);
+            touches = Array.from(e.touches);
             if (touches.length === 1) {
                 // Single touch: pan
                 const touch = touches[0];
                 dragStart = { x: touch.clientX, y: touch.clientY };
                 modelStartPos = { x: currentModel.x, y: currentModel.y };
                 isDragging = true;
+                isPinching = false;
             } else if (touches.length === 2) {
                 // Two touches: pinch/rotate
                 isPinching = true;
+                isDragging = false;
                 const t1 = touches[0], t2 = touches[1];
                 pinchStartDist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
                 pinchStartScale = currentModel.scale.x;
                 pinchStartAngle = Math.atan2(t2.clientY - t1.clientY, t2.clientX - t1.clientX);
                 pinchStartRotation = currentModel.rotation;
             }
-        });
+        }, { passive: false });
 
         canvas.addEventListener('touchmove', (e) => {
             if(!currentModel)return
@@ -803,13 +805,12 @@ VTube StudioモデルディレクトリまたはZIPファイルをドラッグ&�
                 const dist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
                 const scale = dist / pinchStartDist * pinchStartScale;
                 targetScale = scale; // Set target for smooth lerp
-                targetScale = Math.max(0.5, Math.min(3.0, targetScale)); // Clamp
-
+                
                 const angle = Math.atan2(t2.clientY - t1.clientY, t2.clientX - t1.clientX);
                 const rotation = pinchStartRotation + (angle - pinchStartAngle);
                 currentModel.rotation = rotation;
             }
-        });
+        }, { passive: false });
 
         canvas.addEventListener('touchend', (e) => {
             e.preventDefault();
@@ -821,7 +822,7 @@ VTube StudioモデルディレクトリまたはZIPファイルをドラッグ&�
                 isPinching = false;
                 isRotating = false;
             }
-        });
+        }, { passive: false });
     })();
 </script>
 
