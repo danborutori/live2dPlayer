@@ -1,10 +1,35 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Live2D Player</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            overflow: hidden;
+            height: 100vh;
+            width: 100vw;
+            background: #000;
+        }
+        #canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+    </style>
+</head>
+<body>
+
 <script src="https://cubism.live2d.com/sdk-web/cubismcore/live2dcubismcore.min.js"></script>
 <script src="https://cdn.jsdelivr.net/gh/dylanNew/live2d/webgl/Live2D/lib/live2d.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/pixi.js@6.5.2/dist/browser/pixi.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/pixi-live2d-display/dist/index.min.js"></script>
 
 <!--
-TODO: scale/rotate
 TODO: audio
 TODO: load from zip
 TODO: fix hardcode
@@ -344,7 +369,6 @@ TODO: fix hardcode
                 infoText.x = app.screen.width / 2;
                 infoText.y = app.screen.height / 2;
             }
-            if (currentModel) fitModel();
         });
 
         // Mouse tracking - set targets
@@ -611,3 +635,6 @@ TODO: fix hardcode
         });
     })();
 </script>
+
+</body>
+</html>
