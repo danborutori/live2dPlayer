@@ -3,6 +3,12 @@
 <script src="https://cdn.jsdelivr.net/npm/pixi.js@6.5.2/dist/browser/pixi.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/pixi-live2d-display/dist/index.min.js"></script>
 
+<!--
+TODO: scale/rotate
+TODO: audio
+TODO: load from zip
+-->
+
 <canvas id=canvas></canvas>
 
 <script>
@@ -86,8 +92,81 @@
         });
     }
 
+    function thrustingSmooth(time, min = 0, max = 1 ) {
+        // Smooth sin thrust base
+        let thrust = Math.sin(time * 2 * Math.PI)*0.7;
+        
+        // Add layered harmonics for smoothness/depth
+        thrust += Math.sin(time * 2 * 1.22 * Math.PI+0.012) * 0.2; // 2nd harmonic
+        thrust += Math.sin(time * 2 * 0.545 * Math.PI+0.456) * 0.1; // 3rd harmonic
+        
+        // Clamp and remap to [min, max]
+        thrust = Math.max(-1, Math.min(1, thrust));
+        return min + (thrust + 1) / 2 * (max - min);
+    }
+
+    class Animator {
+        prevTime = Date.now()
+
+        penetrateRange = {
+            min: 2.5,
+            max: 10
+        }
+        params = {  // FIXME: hardcoded param setting
+            mouth: {
+                paramId: "Param",
+                thrusting: true,
+                thrustingFade: 0,
+                depth: -10,
+                                
+                time: Math.random()
+            },
+            front: {
+                paramId: "Param2",
+                thrusting: true,
+                thrustingFade: 0,
+                depth: -10,
+                
+                time: Math.random()
+            },
+            back: {
+                paramId: "Param3",
+                thrusting: true,
+                thrustingFade: 0,
+                depth: -10,
+
+                time: Math.random()
+            }
+        }
+
+        constructor( coreModel ){
+            this.coreModel = coreModel
+        }
+
+        update(){
+            const curTime = Date.now()
+            const dt = (curTime-this.prevTime)/1000
+            this.prevTime = curTime
+
+            for( let n in this.params ){
+                const p = this.params[n]
+
+                p.time += dt*1.7
+
+                const targetDepth = thrustingSmooth(p.time, this.penetrateRange.min, this.penetrateRange.max)
+                if( p.thrusting ){
+                    p.thrustingFade = Math.min(1, p.thrustingFade+dt)
+                }else{
+                    p.thrustingFade = Math.max(0, p.thrustingFade-dt)
+                }
+                p.depth = targetDepth*p.thrustingFade+(-10)*(1-p.thrustingFade)
+
+                this.coreModel.setParameterValueById(p.paramId, p.depth)
+            }
+        }
+    }
+
     async function setupModel(model, config) {
-        model.internalModel.motionManager.groups.idle = 'idle';
 
         model.anchor.set(0.5, 0.5);
         model.interactive = true;
@@ -133,64 +212,64 @@
         targetMouseY = 0;
 
         // Blink
-        if (eyeParamId !== null) {
-            let eyeValue = 1.0;
-            let blinkPhase = 'idle';
-            let blinkStartTime = 0;
-            let nextBlinkTime = Date.now() + (3000 + Math.random() * 2000);
+        let eyeValue = 1.0;
+        let blinkPhase = 'idle';
+        let blinkStartTime = 0;
+        let nextBlinkTime = Date.now() + (3000 + Math.random() * 2000);
 
-            blinkFunc = () => {
-                const now = Date.now();
-                if (now >= nextBlinkTime && blinkPhase === 'idle') {
-                    blinkPhase = 'closing';
+        blinkFunc = () => {
+            const now = Date.now();
+            if (now >= nextBlinkTime && blinkPhase === 'idle') {
+                blinkPhase = 'closing';
+                blinkStartTime = now;
+                nextBlinkTime = now + (3000 + Math.random() * 2000);
+            }
+
+            if (blinkPhase === 'closing') {
+                const elapsed = (now - blinkStartTime) / 100;
+                if (elapsed < 1) {
+                    eyeValue = 1 - elapsed;
+                } else {
+                    eyeValue = 0;
+                    blinkPhase = 'closed';
                     blinkStartTime = now;
-                    nextBlinkTime = now + (3000 + Math.random() * 2000);
                 }
-
-                if (blinkPhase === 'closing') {
-                    const elapsed = (now - blinkStartTime) / 100;
-                    if (elapsed < 1) {
-                        eyeValue = 1 - elapsed;
-                    } else {
-                        eyeValue = 0;
-                        blinkPhase = 'closed';
-                        blinkStartTime = now;
-                    }
-                } else if (blinkPhase === 'closed') {
-                    const elapsed = (now - blinkStartTime) / 50;
-                    if (elapsed >= 1) {
-                        blinkPhase = 'opening';
-                        blinkStartTime = now;
-                    }
-                } else if (blinkPhase === 'opening') {
-                    const elapsed = (now - blinkStartTime) / 150;
-                    if (elapsed < 1) {
-                        eyeValue = elapsed;
-                    } else {
-                        eyeValue = 1;
-                        blinkPhase = 'idle';
-                    }
+            } else if (blinkPhase === 'closed') {
+                const elapsed = (now - blinkStartTime) / 50;
+                if (elapsed >= 1) {
+                    blinkPhase = 'opening';
+                    blinkStartTime = now;
                 }
+            } else if (blinkPhase === 'opening') {
+                const elapsed = (now - blinkStartTime) / 150;
+                if (elapsed < 1) {
+                    eyeValue = elapsed;
+                } else {
+                    eyeValue = 1;
+                    blinkPhase = 'idle';
+                }
+            }
 
-                coreModel.setParameterValueById(eyeParamId, eyeValue);
-            };
-            app.ticker.add(blinkFunc);
-
-            // Mouse tracking
-            const lerpFactor = 0.2; // Adjust for desired smoothness (0.1 for more, 0.3 for less)
-            mouseUpdateFunc = () => {
-                const lerpX = smoothingX > 0 ? (1 - (smoothingX / 100) * 0.8) : 1;
-                const lerpY = smoothingY > 0 ? (1 - (smoothingY / 100) * 0.8) : 1;
-
-                currentMouseX += (targetMouseX - currentMouseX) * lerpX;
-                coreModel.setParameterValueById(mouseXId, currentMouseX);
-                
-                currentMouseY += (targetMouseY - currentMouseY) * lerpY;
-                coreModel.setParameterValueById(mouseYId, currentMouseY);
-            };
-            app.ticker.add(mouseUpdateFunc);
-
+            coreModel.setParameterValueById(eyeParamId, eyeValue);
         };
+        app.ticker.add(blinkFunc);
+
+        // Mouse tracking
+        const animator = new Animator(coreModel)
+        const lerpFactor = 0.2; // Adjust for desired smoothness (0.1 for more, 0.3 for less)
+        mouseUpdateFunc = () => {
+            const lerpX = smoothingX > 0 ? (1 - (smoothingX / 100) * 0.8) : 1;
+            const lerpY = smoothingY > 0 ? (1 - (smoothingY / 100) * 0.8) : 1;
+
+            currentMouseX += (targetMouseX - currentMouseX) * lerpX;
+            coreModel.setParameterValueById(mouseXId, currentMouseX);
+            
+            currentMouseY += (targetMouseY - currentMouseY) * lerpY;
+            coreModel.setParameterValueById(mouseYId, currentMouseY);
+
+            animator.update()
+        };
+        app.ticker.add(mouseUpdateFunc);
 
         // Tap to toggle expression based on hit area
         model.on('hit', (hitAreas) => {
@@ -201,14 +280,14 @@
                 // Example: Map hit area to specific expression (extend as needed)
                 let expName = null;
                 const hitToExpMap = {
-                    'mouth': 'mouth stop', // Assume expressions named after parts
-                    'vagina_open': 'front_stop',
-                    'anal_open': "back_stop"
+                    'mouth': 'mouth', // Assume expressions named after parts
+                    'vagina_open': 'front',
+                    'anal_open': "back"
                     // Add more mappings based on model hit areas
                 };
-                expName = hitToExpMap[hitAreaName] || Object.values(expressionMap)[Math.floor(Math.random() * Object.values(expressionMap).length)];
+                expName = hitToExpMap[hitAreaName];
 
-                model.expression(expName)
+                animator.params[expName].thrusting = !animator.params[expName].thrusting
             }
         });
     }
@@ -340,59 +419,38 @@
 
                 // customSetting
                 const modelFile = filteredFiles.find( f=>f.name.endsWith(".model3.json") )
-                if( modelFile && config.FileReferences.IdleAnimation ){
+                if( modelFile ){
+                    const settingText = await new Promise((resolve, reject) => {
+                        const reader = new FileReader();
+                        reader.onload = () => resolve(reader.result);
+                        reader.onerror = reject;
+                        reader.readAsText(modelFile);
+                    });
+                    const settingsJson = JSON.parse(settingText);
 
-                    const motionFile = filteredFiles.find( f=>f.name===config.FileReferences.IdleAnimation ) 
-                    if( motionFile ){
+                    // add hit areas
+                    settingsJson.HitAreas = [   // FIXME: temporay hardcode
+                        {
+                            Id: "mouth",
+                            Name: "mouth"
+                        },
+                        {
+                            Id: "vagina_open",
+                            Name: "vagina_open"
+                        },
+                        {
+                            Id: "anal_open",
+                            Name: "anal_open"
+                        },                            
+                    ]
 
-                        const settingText = await new Promise((resolve, reject) => {
-                            const reader = new FileReader();
-                            reader.onload = () => resolve(reader.result);
-                            reader.onerror = reject;
-                            reader.readAsText(modelFile);
-                        });
-                        const settingsJson = JSON.parse(settingText);
-                        settingsJson.FileReferences.Motions = {
-                            idle: [{File: motionFile.webkitRelativePath}]
-                        }
-
-                        // add hit areas
-                        settingsJson.HitAreas = [   // FIXME: temporay hardcode
-                            {
-                                Id: "mouth",
-                                Name: "mouth"
-                            },
-                            {
-                                Id: "vagina_open",
-                                Name: "vagina_open"
-                            },
-                            {
-                                Id: "anal_open",
-                                Name: "anal_open"
-                            },                            
-                        ]
-
-                        // add expressions
-                        const expressionFiles = filteredFiles.filter(f=>f.name.endsWith("exp3.json"))
-                        settingsJson.FileReferences.Expressions = expressionFiles.map(f=>{
-                            return {
-                                Name: f.name.split(".")[0],
-                                File: f.webkitRelativePath
-                            }
-                        })
-
-                        settingsJson.url = modelFile.name
-                        filteredFiles.settings = new PIXI.live2d.Cubism4ModelSettings(settingsJson)
-                        filteredFiles.settings._objectURL = URL.createObjectURL(modelFile)
-                    }
+                    settingsJson.url = modelFile.name
+                    filteredFiles.settings = new PIXI.live2d.Cubism4ModelSettings(settingsJson)
+                    filteredFiles.settings._objectURL = URL.createObjectURL(modelFile)
                 }
 
-                // Set idle motion group option
-                const modelOptions = {
-                    idleMotionGroup: 'idle'
-                };
-
-                const newModel = await PIXI.live2d.Live2DModel.from(filteredFiles, modelOptions);
+                // Set idle motion group option                
+                const newModel = await PIXI.live2d.Live2DModel.from(filteredFiles);
                 currentModel = newModel;
                 app.stage.addChild(newModel);
                 await setupModel(newModel, config);
