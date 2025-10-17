@@ -781,6 +781,7 @@ VTube StudioモデルディレクトリまたはZIPファイルをドラッグ&�
         });
 
         // Touch events for pan, pinch scale, rotate
+        const prevTouches = {}
         canvas.addEventListener('touchstart', (e) => {
             if(!currentModel)return
             e.preventDefault();
@@ -801,6 +802,12 @@ VTube StudioモデルディレクトリまたはZIPファイルをドラッグ&�
                 pinchStartAngle = Math.atan2(t2.clientY - t1.clientY, t2.clientX - t1.clientX);
                 pinchStartRotation = currentModel.rotation;
             }
+            for( let t of touches ){
+                prevTouches[t.identifier] = {
+                    x: t.clientX,
+                    y: t.clientY,
+                }
+            }
         }, { passive: false });
 
         canvas.addEventListener('touchmove', (e) => {
@@ -809,14 +816,25 @@ VTube StudioモデルディレクトリまたはZIPファイルをドラッグ&�
             const changedTouches = Array.from(e.changedTouches);
             touches = changedTouches;
 
-            if (e.touches.length === 1 && isDragging) {
+            if (isDragging) {
                 // Pan
-                const touch = touches[0];
-                const dx = touch.clientX - dragStart.x;
-                const dy = touch.clientY - dragStart.y;
-                currentModel.x = modelStartPos.x + dx;
-                currentModel.y = modelStartPos.y + dy;
-            } else if (touches.length === 2 && isPinching) {
+                let dx = 0;
+                let dy = 0;
+                let cnt = 0;
+                for( let t of e.touches ){
+                    const prev = prevTouches[t.identifier]
+                    if( prev ){
+                        dx += t.clientX-prev.x
+                        dy += t.clientY-prev.y
+                        cnt++
+                    }
+                }
+                if( cnt!=0 ){
+                    currentModel.x += dx/cnt;
+                    currentModel.y += dy/cnt;
+                }
+            }
+            if (touches.length === 2 && isPinching) {
                 // Pinch scale and rotate
                 const t1 = touches[0], t2 = touches[1];
                 const dist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
@@ -826,6 +844,12 @@ VTube StudioモデルディレクトリまたはZIPファイルをドラッグ&�
                 const angle = Math.atan2(t2.clientY - t1.clientY, t2.clientX - t1.clientX);
                 const rotation = pinchStartRotation + (angle - pinchStartAngle);
                 currentModel.rotation = rotation;
+            }
+            for( let t of touches ){
+                prevTouches[t.identifier] = {
+                    x: t.clientX,
+                    y: t.clientY,
+                }
             }
         }, { passive: false });
 
@@ -838,6 +862,10 @@ VTube StudioモデルディレクトリまたはZIPファイルをドラッグ&�
                 isDragging = false;
                 isPinching = false;
                 isRotating = false;
+            }
+
+            for( let t of changedTouches ){
+                delete prevTouches[t.identifier]
             }
         }, { passive: false });
     })();
