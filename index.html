@@ -286,7 +286,6 @@ TODO: fix hardcode
                     if( triggered ){
                         if( !c.triggered ){
                             c.triggered = true
-                            console.log(`trigger: ${c.contentName}`)
 
                             const soundFile = this.source.find( f=>f.name===c.seFileName)
                             if( soundFile ){
@@ -296,9 +295,6 @@ TODO: fix hardcode
                     }else{
                         if( c.triggered ){                            
                             c.triggered = false
-                            console.log(`untrigger: ${c.contentName}`)
-                        }else{
-                            console.log(`not trigger: ${c.contentName} ${coreModel.getParameterValueById(c.triggers[0].paramName.replace("LIVE2D:",""))}`)
                         }
                     }
                 }
