@@ -64,7 +64,8 @@
 ">
 VTube StudioモデルディレクトリまたはZIPファイルをドラッグ&ドロップしてLive2Dモデルをロード。<br/><br/>
 またはタップしてZIPを選択。<br/><br/>
-モデルをタップしてアニメーションをトリガー。
+<span id="gestureText"></span><br/><br/>
+ロード後、モデルをタップしてアニメーションをトリガー
 </div>
 
 <button id="fullscreenButton">⛶</button> <!-- Unicode full screen icon; change to text if needed -->
@@ -453,7 +454,22 @@ VTube StudioモデルディレクトリまたはZIPファイルをドラッグ&�
         currentModel.position.set(app.screen.width / 2, app.screen.height / 2);
     }
 
+    function isMobile() {
+        const ua = navigator.userAgent.toLowerCase();
+        return /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(ua);
+    }
+
     (async function main() {
+        function updateGestureText() {
+            const gestureText = document.getElementById('gestureText');
+            if (isMobile()) {
+                gestureText.innerHTML = '1本指ドラッグでパン、ピンチでスケール&回転。';
+            } else {
+                gestureText.innerHTML = '左ドラッグでパン、右ドラッグで回転、ホイールでスケール。';
+            }
+        }
+        updateGestureText(); // Initial
+        
         const infoText = document.getElementById('infoText');
         infoText.onclick = ()=>fileInput.click()
         function resizeText(){        
@@ -462,6 +478,7 @@ VTube StudioモデルディレクトリまたはZIPファイルをドラッグ&�
         resizeText()
         window.addEventListener('resize', () => {
             resizeText()
+            updateGestureText()
         });
 
         // Mouse tracking - set targets
