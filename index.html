@@ -87,7 +87,10 @@
     }
 
     async function setupModel(model, config) {
+        model.internalModel.motionManager.groups.idle = 'idle';
+
         model.anchor.set(0.5, 0.5);
+        model.interactive = true;
 
         const localBounds = model.getLocalBounds();
         modelWidth = localBounds.width;
@@ -188,6 +191,26 @@
             app.ticker.add(mouseUpdateFunc);
 
         };
+
+        // Tap to toggle expression based on hit area
+        model.on('hit', (hitAreas) => {
+            if (hitAreas.length > 0) {
+                const hitAreaName = hitAreas[0]; // Use the first hit area
+                console.log('Tapped hit area:', hitAreaName);
+
+                // Example: Map hit area to specific expression (extend as needed)
+                let expName = null;
+                const hitToExpMap = {
+                    'mouth': 'mouth stop', // Assume expressions named after parts
+                    'vagina_open': 'front_stop',
+                    'anal_open': "back_stop"
+                    // Add more mappings based on model hit areas
+                };
+                expName = hitToExpMap[hitAreaName] || Object.values(expressionMap)[Math.floor(Math.random() * Object.values(expressionMap).length)];
+
+                model.expression(expName)
+            }
+        });
     }
 
     function fitModel() {
@@ -332,6 +355,32 @@
                         settingsJson.FileReferences.Motions = {
                             idle: [{File: motionFile.webkitRelativePath}]
                         }
+
+                        // add hit areas
+                        settingsJson.HitAreas = [   // FIXME: temporay hardcode
+                            {
+                                Id: "mouth",
+                                Name: "mouth"
+                            },
+                            {
+                                Id: "vagina_open",
+                                Name: "vagina_open"
+                            },
+                            {
+                                Id: "anal_open",
+                                Name: "anal_open"
+                            },                            
+                        ]
+
+                        // add expressions
+                        const expressionFiles = filteredFiles.filter(f=>f.name.endsWith("exp3.json"))
+                        settingsJson.FileReferences.Expressions = expressionFiles.map(f=>{
+                            return {
+                                Name: f.name.split(".")[0],
+                                File: f.webkitRelativePath
+                            }
+                        })
+
                         settingsJson.url = modelFile.name
                         filteredFiles.settings = new PIXI.live2d.Cubism4ModelSettings(settingsJson)
                         filteredFiles.settings._objectURL = URL.createObjectURL(modelFile)
@@ -347,8 +396,7 @@
                 currentModel = newModel;
                 app.stage.addChild(newModel);
                 await setupModel(newModel, config);
-                newModel.internalModel.motionManager.groups.idle = 'idle';
-
+         
                 if (infoText) {
                     app.stage.removeChild(infoText);
                     infoText.destroy();
