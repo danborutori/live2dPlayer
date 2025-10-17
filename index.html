@@ -30,6 +30,8 @@
 <script src="https://cdn.jsdelivr.net/npm/pixi.js@6.5.2/dist/browser/pixi.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/pixi-live2d-display/dist/index.min.js"></script>
 
+<input type="file" id="fileInput" accept=".zip">
+
 <canvas id=canvas></canvas>
 
 <script>
@@ -425,6 +427,11 @@
         infoText.anchor.set(0.5, 0.5);
         infoText.x = app.screen.width / 2;
         infoText.y = app.screen.height / 2;
+        infoText.interactive = true;
+        infoText.buttonMode = true; // Cursor pointer on hover
+        infoText.on('pointertap', () => {
+            fileInput.click(); // Trigger file selection
+        });
         app.stage.addChild(infoText);
 
         window.addEventListener('resize', () => {
@@ -481,18 +488,8 @@
             e.dataTransfer.dropEffect = 'copy';
         });
 
-        canvas.addEventListener('drop', async (e) => {
-            e.preventDefault();
-            const items = [...e.dataTransfer.items];
+        async function loadEntries(entries){
             let files = []; // Merged array for all directories/ZIPs
-
-            const entries = items.flatMap(i=>{
-                
-                return i.kind === 'file' ? {
-                    entry: i.webkitGetAsEntry(),
-                    file: i.getAsFile()
-                }:null
-            })
 
             for (const {entry, file} of entries) {
                 if (entry && entry.isDirectory) {
@@ -639,6 +636,40 @@
                 }
             } catch (err) {
                 console.error('Error loading dropped directory:', err);
+            }
+        }
+
+        canvas.addEventListener('drop', async (e) => {
+            e.preventDefault();
+            const items = [...e.dataTransfer.items];
+            
+            const entries = items.flatMap(i=>{
+                
+                return i.kind === 'file' ? {
+                    entry: i.webkitGetAsEntry(),
+                    file: i.getAsFile()
+                }:null
+            })
+
+            await loadEntries(entries)            
+        });
+
+        const fileInput = document.getElementById('fileInput');        
+        fileInput.addEventListener('change', async (e) => {
+            const selectedFiles = Array.from(e.target.files);
+            if (!selectedFiles.length) return;
+
+            try {
+                await loadEntries(selectedFiles.map(f=>{
+                    return {
+                        file: f
+                    }
+                }))
+
+                // Clear input after load
+                fileInput.value = '';
+            } catch (err) {
+                console.error('Error loading from file input:', err);
             }
         });
 
