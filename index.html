@@ -175,13 +175,21 @@ VTube StudioモデルディレクトリまたはZIPファイルをドラッグ&�
         });
     }
 
-    function thrustingSmooth(time, min = 0, max = 1 ) {
-        // Smooth sin thrust base
-        let thrust = Math.sin(time * 2 * Math.PI)*0.9;
+    function thrustingSmooth(time, p, min = 0, max = 1 ) {
+        // Base frequency with random walk variation for "random" curve
+        const baseFreq = 2;
+        // Simple random walk for phase offset (cumulative small random changes)
+        let phaseOffset = 0;
+        if (!p.lastPhase) p.lastPhase = 0;
+        phaseOffset = p.lastPhase + Math.sin(time*0.01) * 0.05; // Small random step
+        p.lastPhase = phaseOffset; // Persist for next call (static-like)
+
+        // Smooth sin thrust base with random phase
+        let thrust = Math.sin(time * baseFreq * Math.PI + phaseOffset) * 0.9;
         
-        // Add layered harmonics for smoothness/depth
-        thrust += Math.sin(time * 2 * 1.22 * Math.PI+0.012) * 0.05; // 2nd harmonic
-        thrust += Math.sin(time * 2 * 0.545 * Math.PI+0.456) * 0.05; // 3rd harmonic
+        // Harmonics with random amplitude/phase jitter
+        thrust += Math.sin(time * baseFreq * 1.22 * Math.PI + phaseOffset * 0.5 + Math.sin( time * 0.2 ) * 0.1) * (0.05 + Math.sin( time * 0.5 ) * 0.05);
+        thrust += Math.sin(time * baseFreq * 0.545 * Math.PI + phaseOffset * 1.5 + Math.sin( time * 0.3 ) * 0.2) * (0.05 + Math.sin( time * 0.4 ) * 0.03);
         
         // Clamp and remap to [min, max]
         thrust = Math.max(-1, Math.min(1, thrust));
@@ -201,9 +209,8 @@ VTube StudioモデルディレクトリまたはZIPファイルをドラッグ&�
                     paramId: a.paramId,
                     thrusting: false,
                     thrustingFade: 0,
-                    depth: -10,
-                                    
-                    time: Math.random()
+                    depth: -10,                                    
+                    time: 0
                 }
             }
         }
@@ -218,7 +225,7 @@ VTube StudioモデルディレクトリまたはZIPファイルをドラッグ&�
 
                 p.time += dt*1.7
 
-                const targetDepth = thrustingSmooth(p.time, this.penetrateRange.min, this.penetrateRange.max)
+                const targetDepth = thrustingSmooth(p.time, p, this.penetrateRange.min, this.penetrateRange.max)
                 if( p.thrusting ){
                     p.thrustingFade = Math.min(1, p.thrustingFade+dt)
                 }else{
@@ -441,6 +448,7 @@ VTube StudioモデルディレクトリまたはZIPファイルをドラッグ&�
                 let expName = hitToExpMap[hitAreaName];
 
                 animator.params[expName].thrusting = !animator.params[expName].thrusting
+                animator.params[expName].time = Math.random()*10
             }
         });
     }
