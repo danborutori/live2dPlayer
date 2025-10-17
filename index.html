@@ -468,27 +468,28 @@ VTube StudioモデルディレクトリまたはZIPファイルをドラッグ&�
         app.stage.interactive = true;
         app.stage.hitArea = new PIXI.Rectangle(0, 0, app.screen.width, app.screen.height);
         app.stage.on('pointermove', (event) => {
-            if (!coreModel) return;
-            const pos = event.data.global;
-            const w = app.screen.width;
-            const h = app.screen.height;
+            if (!coreModel || !currentModel) return;
+            const globalPos = event.data.global;
+            const localPos = currentModel.toLocal(globalPos); // Transform to model's local coords (accounts for rotation/scale/pos)
 
-             // X mapping
-            const rawInputX = pos.x / w - 0.5;
+            // Normalize to model's local bounds (0-1 center-relative)
+            const rawInputX = localPos.x / modelWidth;
+            const rawInputY = 1-localPos.y / modelHeight;
+
+            // X mapping (center-relative, -0.5 to 0.5)
             const deltaInX = inputUpperX - inputLowerX;
             if (deltaInX !== 0 && mouseXId !== null) {
-                const fractionX = (rawInputX - inputLowerX) / deltaInX;
-                targetMouseX = outputLowerX + fractionX * (outputUpperX - outputLowerX);
+                const fractionX = (rawInputX - 0.5) / 0.5; // Normalize to -1 to 1, then adjust if needed
+                targetMouseX = outputLowerX + (fractionX + 1) / 2 * (outputUpperX - outputLowerX); // Remap to output range
             } else {
                 targetMouseX = 0;
             }
 
-            // Y mapping
-            const rawInputY = 0.5 - (pos.y / h);
+            // Y mapping (invert for top-down, center-relative)
             const deltaInY = inputUpperY - inputLowerY;
             if (deltaInY !== 0 && mouseYId !== null) {
-                const fractionY = (rawInputY - inputLowerY) / deltaInY;
-                targetMouseY = outputLowerY + fractionY * (outputUpperY - outputLowerY);
+                const fractionY = (0.5 - rawInputY) / 0.5; // Invert and normalize to -1 to 1
+                targetMouseY = (outputLowerY + (fractionY + 1) / 2 * (outputUpperY - outputLowerY)); // Remap
             } else {
                 targetMouseY = 0;
             }
