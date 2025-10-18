@@ -495,29 +495,28 @@ VTube StudioモデルディレクトリまたはZIPファイルをドラッグ&�
         app.stage.on('pointermove', (event) => {
             if (!coreModel || !currentModel) return;
             const globalPos = event.data.global;
-            const localPos = currentModel.toLocal(globalPos); // Transform to model's local coords (accounts for rotation/scale/pos)
+            const angle = -currentModel.rotation
+            const cos = Math.cos(angle);
+            const sin = Math.sin(angle);
+            
+            const x = globalPos.x*2/app.screen.width-1
+            const y = globalPos.y*2/app.screen.height-1
+            const localPos = {  // Transform to model's local coords (accounts for rotation/scale/pos)
+                x: x * cos - y * sin,
+                y: x * sin + y * cos
+            }
 
             // Normalize to model's local bounds (0-1 center-relative)
-            const rawInputX = localPos.x / modelWidth;
-            const rawInputY = 1-localPos.y / modelHeight;
+            const rawInputX = localPos.x;
+            const rawInputY = -localPos.y;
 
             // X mapping (center-relative, -0.5 to 0.5)
-            const deltaInX = inputUpperX - inputLowerX;
-            if (deltaInX !== 0 && mouseXId !== null) {
-                const fractionX = (rawInputX - 0.5) / 0.5; // Normalize to -1 to 1, then adjust if needed
-                targetMouseX = outputLowerX + (fractionX + 1) / 2 * (outputUpperX - outputLowerX); // Remap to output range
-            } else {
-                targetMouseX = 0;
-            }
-
+            const fractionX = (rawInputX-inputLowerX)/(inputUpperX-inputLowerX); // Normalize to -1 to 1, then adjust if needed
+            targetMouseX = outputLowerX * (1-fractionX) + outputUpperX *fractionX; // Remap to output range
+            
             // Y mapping (invert for top-down, center-relative)
-            const deltaInY = inputUpperY - inputLowerY;
-            if (deltaInY !== 0 && mouseYId !== null) {
-                const fractionY = (0.5 - rawInputY) / 0.5; // Invert and normalize to -1 to 1
-                targetMouseY = (outputLowerY + (fractionY + 1) / 2 * (outputUpperY - outputLowerY)); // Remap
-            } else {
-                targetMouseY = 0;
-            }
+            const fractionY = (rawInputY-inputLowerY)/(inputUpperY-inputLowerY); // Invert and normalize to -1 to 1
+            targetMouseY = outputLowerY * (1-fractionY) + outputUpperY *fractionY; // Remap            
         });
         app.ticker.add(()=>{
             currentAudioPlayer?.update()
