@@ -487,6 +487,13 @@ VTube StudioモデルディレクトリまたはZIPファイルをドラッグ&�
         window.addEventListener('resize', () => {
             resizeText()
             updateGestureText()
+            app.stage.hitArea = new PIXI.Rectangle(0, 0, app.screen.width, app.screen.height);
+        });
+        // Also, in orientationchange for mobile:
+        window.addEventListener('orientationchange', () => {
+            setTimeout(() => {
+                app.stage.hitArea = new PIXI.Rectangle(0, 0, app.screen.width, app.screen.height);    
+            }, 100);            
         });
 
         // Mouse tracking - set targets
