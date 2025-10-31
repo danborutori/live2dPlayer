@@ -334,6 +334,8 @@ VTube StudioモデルディレクトリまたはZIPファイルをドラッグ&�
 
     async function setupModel(model, config, settingJSON) {
 
+        model.internalModel.renderer._clippingManager.setClippingMaskBufferSize( 1024 )
+
         model.anchor.set(0.5, 0.5);
         model.interactive = true;
 
