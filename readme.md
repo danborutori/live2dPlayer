@@ -76,3 +76,7 @@ A lightweight, browser-based viewer for VTube Studio Live2D models with gesture 
 MIT License. Feel free to fork/modify.
 
 Questions? Open an issue!
+
+## Change Log
+- Changes v1.4:
+   - Mask resolution increased from 256 to 1024
