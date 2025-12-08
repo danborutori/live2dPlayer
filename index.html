@@ -2,7 +2,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Live2D プレーヤー v1.4</title>
+    <title>Live2D プレーヤー v1.5</title>
     <style>
         * {
             margin: 0;
@@ -211,11 +211,14 @@ VTube StudioモデルディレクトリまたはZIPファイルをドラッグ&�
             this.coreModel = coreModel
             this.penetrateRange = settingJSON.penetrateRange
             for( let a of settingJSON.hitAreas ){
+                const restValue = a.restValue!==undefined?a.restValue:-10
                 this.params[a.ExpName] = {
                     paramId: a.paramId,
                     thrusting: false,
                     thrustingFade: 0,
-                    depth: -10,                                    
+                    restDepth: restValue,
+                    depth: restValue,
+                    timeScale: a.timeScale || 1.7,
                     time: 0
                 }
             }
@@ -229,7 +232,7 @@ VTube StudioモデルディレクトリまたはZIPファイルをドラッグ&�
             for( let n in this.params ){
                 const p = this.params[n]
 
-                p.time += dt*1.7
+                p.time += dt*p.timeScale
 
                 const targetDepth = thrustingSmooth(p.time, p, this.penetrateRange.min, this.penetrateRange.max)
                 if( p.thrusting ){
@@ -237,7 +240,7 @@ VTube StudioモデルディレクトリまたはZIPファイルをドラッグ&�
                 }else{
                     p.thrustingFade = Math.max(0, p.thrustingFade-dt)
                 }
-                p.depth = targetDepth*p.thrustingFade+(-10)*(1-p.thrustingFade)
+                p.depth = targetDepth*p.thrustingFade+p.restDepth*(1-p.thrustingFade)
 
                 this.coreModel.setParameterValueById(p.paramId, p.depth)
             }
@@ -446,17 +449,23 @@ VTube StudioモデルディレクトリまたはZIPファイルをドラッグ&�
         // Tap to toggle expression based on hit area
         const hitToExpMap = {};
         for( let a of settingJSON.hitAreas ){
-            hitToExpMap[a.Id] = a.ExpName
+            if(!hitToExpMap[a.Id]){
+                hitToExpMap[a.Id] = [a.ExpName]
+            }else{
+                hitToExpMap[a.Id].push(a.ExpName)
+            }
         }
         model.on('hit', (hitAreas) => {
             if (hitAreas.length > 0) {
                 const hitAreaName = hitAreas[0]; // Use the first hit area
 
                 // Example: Map hit area to specific expression (extend as needed)
-                let expName = hitToExpMap[hitAreaName];
+                const expNames = hitToExpMap[hitAreaName];
 
-                animator.params[expName].thrusting = !animator.params[expName].thrusting
-                animator.params[expName].time = Math.random()*10
+                for( let expName of expNames ){
+                    animator.params[expName].thrusting = !animator.params[expName].thrusting
+                    animator.params[expName].time = Math.random()*10
+                }
             }
         });
     }
